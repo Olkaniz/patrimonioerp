@@ -29,4 +29,10 @@ insert.run(
   "Inativo"
 );
 
+db.prepare(`
+  INSERT OR IGNORE INTO usuarios (email, nome, setor, nivel_permissao)
+  VALUES (?, ?, ?, ?)
+`).run("ti@plataformainternacional.com.br", "Usuário TI", "TI", 4);
+
+
 console.log("Dados inseridos!");

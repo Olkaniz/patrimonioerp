@@ -17,4 +17,14 @@ db.exec(`
   );
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    nome TEXT,
+    setor TEXT,
+    nivel_permissao INTEGER DEFAULT 1
+  );
+`);
+
 export default db;

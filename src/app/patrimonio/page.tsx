@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import type { Patrimonio } from "@/types/patrimonio";
 
 export default function PatrimonioPage() {
+  const { data: session, status } = useSession();
+
   const [patrimonios, setPatrimonios] = useState<Patrimonio[]>([]);
   const [formData, setFormData] = useState({
     codigo: "",
@@ -15,8 +18,13 @@ export default function PatrimonioPage() {
     responsavel: "",
     situacao: "",
   });
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+
+  const nivel = session?.user?.nivel_permissao || 1;
+  const setorUsuario = session?.user?.setor || "";
+  const nomeUsuario = session?.user?.name || "";
 
   useEffect(() => {
     fetch("/api/patrimonios")
@@ -24,7 +32,17 @@ export default function PatrimonioPage() {
       .then((data) => setPatrimonios(data));
   }, []);
 
+  const podeModificar = (item: Patrimonio) => {
+    return (
+      nivel === 4 ||
+      (nivel === 3 && item.localizacao === setorUsuario) ||
+      (nivel === 2 && item.responsavel === nomeUsuario)
+    );
+  };
+
   const handleEdit = (item: Patrimonio) => {
+    if (!podeModificar(item)) return alert("Você não tem permissão para editar este item.");
+
     setFormData({
       codigo: item.codigo,
       nome: item.nome,
@@ -39,34 +57,48 @@ export default function PatrimonioPage() {
     setShowForm(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number, item: Patrimonio) => {
+    if (!podeModificar(item)) return alert("Você não tem permissão para excluir este item.");
     if (!confirm("Tem certeza que deseja excluir este item?")) return;
-    await fetch("/api/patrimonios", {
+
+    const res = await fetch("/api/patrimonios", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+
+    if (!res.ok) {
+      const { error } = await res.json();
+      return alert(error || "Erro ao excluir item.");
+    }
+
     setPatrimonios((prev) => prev.filter((item) => item.id !== id));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     const method = editingId ? "PUT" : "POST";
+    const body = JSON.stringify(editingId ? { ...formData, id: editingId } : formData);
 
     const res = await fetch("/api/patrimonios", {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editingId ? { ...formData, id: editingId } : formData),
+      body,
     });
 
-    const updated = await res.json();
+    const result = await res.json();
+
+    if (!res.ok) {
+      return alert(result.error || "Erro ao salvar");
+    }
 
     if (editingId) {
       setPatrimonios((prev) =>
-        prev.map((item) => (item.id === editingId ? { ...updated, id: editingId } : item))
+        prev.map((item) => (item.id === editingId ? { ...result, id: editingId } : item))
       );
     } else {
-      setPatrimonios((prev) => [...prev, updated]);
+      setPatrimonios((prev) => [...prev, result]);
     }
 
     setFormData({
@@ -87,63 +119,64 @@ export default function PatrimonioPage() {
     <main className="min-h-screen bg-zinc-900 text-white p-6">
       <h1 className="text-3xl font-bold mb-6">Patrimônios</h1>
 
-      <button
-        onClick={() => {
-          setShowForm(true);
-          setFormData({
-            codigo: "",
-            nome: "",
-            categoria: "",
-            descricao: "",
-            data_aquisicao: "",
-            localizacao: "",
-            responsavel: "",
-            situacao: "",
-          });
-          setEditingId(null);
-        }}
-        className="mb-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-      >
-        Adicionar Patrimônio
-      </button>
+      {nivel > 1 && (
+        <button
+          onClick={() => {
+            setShowForm(true);
+            setFormData({
+              codigo: "",
+              nome: "",
+              categoria: "",
+              descricao: "",
+              data_aquisicao: "",
+              localizacao: "",
+              responsavel: "",
+              situacao: "",
+            });
+            setEditingId(null);
+          }}
+          className="mb-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+        >
+          Adicionar Patrimônio
+        </button>
+      )}
 
-      {showForm && (
+      {showForm && nivel > 1 && (
         <form onSubmit={handleSubmit} className="bg-zinc-700 p-4 rounded mb-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
-          {Object.entries(formData).map(([key, value]) => {
-  if (key === "situacao") {
-    return (
-      <select
-        key={key}
-        value={value}
-        onChange={(e) =>
-          setFormData((prev) => ({ ...prev, [key]: e.target.value }))
-        }
-        className="p-2 rounded bg-zinc-800 text-white"
-        required
-      >
-        <option value="">Selecione a Situação</option>
-        <option value="Ativo">Ativo</option>
-        <option value="Inativo">Inativo</option>
-      </select>
-    );
-  }
+            {Object.entries(formData).map(([key, value]) => {
+              if (key === "situacao") {
+                return (
+                  <select
+                    key={key}
+                    value={value}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, [key]: e.target.value }))
+                    }
+                    className="p-2 rounded bg-zinc-800 text-white"
+                    required
+                  >
+                    <option value="">Selecione a Situação</option>
+                    <option value="Ativo">Ativo</option>
+                    <option value="Inativo">Inativo</option>
+                  </select>
+                );
+              }
 
-  return (
-    <input
-      key={key}
-      type={key === "data_aquisicao" ? "date" : "text"}
-      placeholder={key}
-      value={value}
-      onChange={(e) =>
-        setFormData((prev) => ({ ...prev, [key]: e.target.value }))
-      }
-      className="p-2 rounded bg-zinc-800 text-white"
-      required
-    />
-  );
-})}
-
+              return (
+                <input
+                  key={key}
+                  type={key === "data_aquisicao" ? "date" : "text"}
+                  placeholder={key}
+                  value={value}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, [key]: e.target.value }))
+                  }
+                  className="p-2 rounded bg-zinc-800 text-white"
+                  required
+                />
+              );
+            })}
           </div>
           <div className="flex gap-4">
             <button type="submit" className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">
@@ -180,7 +213,7 @@ export default function PatrimonioPage() {
                 <th className="px-4 py-2">Localização</th>
                 <th className="px-4 py-2">Responsável</th>
                 <th className="px-4 py-2">Situação</th>
-                <th className="px-4 py-2">Ações</th>
+                {nivel > 1 && <th className="px-4 py-2">Ações</th>}
               </tr>
             </thead>
             <tbody>
@@ -194,20 +227,22 @@ export default function PatrimonioPage() {
                   <td className="px-4 py-2">{item.localizacao}</td>
                   <td className="px-4 py-2">{item.responsavel}</td>
                   <td className="px-4 py-2">{item.situacao}</td>
-                  <td className="px-4 py-2">
-                    <button
-                      onClick={() => handleEdit(item)}
-                      className="text-blue-400 hover:underline mr-2"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="text-red-400 hover:underline"
-                    >
-                      Excluir
-                    </button>
-                  </td>
+                  {nivel > 1 && (
+                    <td className="px-4 py-2">
+                      <button
+                        onClick={() => handleEdit(item)}
+                        className="text-blue-400 hover:underline mr-2"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id, item)}
+                        className="text-red-400 hover:underline"
+                      >
+                        Excluir
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
