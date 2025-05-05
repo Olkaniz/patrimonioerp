@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import type { Patrimonio } from "@/types/patrimonio";
+import { useRouter } from "next/navigation";
 
 export default function PatrimonioPage() {
   const { data: session, status } = useSession();
