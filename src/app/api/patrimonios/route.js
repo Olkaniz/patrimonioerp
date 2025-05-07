@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import db from '@/lib/db';
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  getDocs,
+  addDoc,
+  doc,
+  getDoc,
+  updateDoc,
+  deleteDoc
+} from 'firebase/firestore';
 
 // Helper para checar permissões
 function podeModificar(item, user) {
@@ -11,12 +20,14 @@ function podeModificar(item, user) {
   return false;
 }
 
+// GET - Listar patrimônios
 export async function GET() {
-  const stmt = db.prepare('SELECT * FROM patrimonio');
-  const patrimonios = stmt.all();
+  const snapshot = await getDocs(collection(db, 'patrimonios'));
+  const patrimonios = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   return NextResponse.json(patrimonios);
 }
 
+// POST - Criar novo patrimônio
 export async function POST(req) {
   const session = await getServerSession(authOptions);
   if (!session || session.user.nivel_permissao < 2) {
@@ -25,26 +36,11 @@ export async function POST(req) {
 
   const data = await req.json();
 
-  const stmt = db.prepare(`
-    INSERT INTO patrimonio 
-    (codigo, nome, categoria, descricao, data_aquisicao, localizacao, responsavel, situacao)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const info = stmt.run(
-    data.codigo,
-    data.nome,
-    data.categoria,
-    data.descricao,
-    data.data_aquisicao,
-    data.localizacao,
-    data.responsavel,
-    data.situacao
-  );
-
-  return NextResponse.json({ id: info.lastInsertRowid, ...data });
+  const docRef = await addDoc(collection(db, 'patrimonios'), data);
+  return NextResponse.json({ id: docRef.id, ...data });
 }
 
+// PUT - Atualizar patrimônio
 export async function PUT(req) {
   const session = await getServerSession(authOptions);
   if (!session || session.user.nivel_permissao < 2) {
@@ -52,36 +48,24 @@ export async function PUT(req) {
   }
 
   const data = await req.json();
-  const itemAtual = db.prepare('SELECT * FROM patrimonio WHERE id = ?').get(data.id);
+  const docRef = doc(db, 'patrimonios', data.id);
+  const docSnap = await getDoc(docRef);
 
-  if (!itemAtual) {
+  if (!docSnap.exists()) {
     return NextResponse.json({ error: 'Item não encontrado' }, { status: 404 });
   }
+
+  const itemAtual = docSnap.data();
 
   if (!podeModificar(itemAtual, session.user)) {
     return NextResponse.json({ error: 'Sem permissão para editar' }, { status: 403 });
   }
 
-  db.prepare(`
-    UPDATE patrimonio SET 
-      codigo = ?, nome = ?, categoria = ?, descricao = ?, 
-      data_aquisicao = ?, localizacao = ?, responsavel = ?, situacao = ?
-    WHERE id = ?
-  `).run(
-    data.codigo,
-    data.nome,
-    data.categoria,
-    data.descricao,
-    data.data_aquisicao,
-    data.localizacao,
-    data.responsavel,
-    data.situacao,
-    data.id
-  );
-
+  await updateDoc(docRef, data);
   return NextResponse.json({ success: true });
 }
 
+// DELETE - Excluir patrimônio
 export async function DELETE(req) {
   const session = await getServerSession(authOptions);
   if (!session || session.user.nivel_permissao < 2) {
@@ -89,17 +73,19 @@ export async function DELETE(req) {
   }
 
   const { id } = await req.json();
-  const itemAtual = db.prepare('SELECT * FROM patrimonio WHERE id = ?').get(id);
+  const docRef = doc(db, 'patrimonios', id);
+  const docSnap = await getDoc(docRef);
 
-  if (!itemAtual) {
+  if (!docSnap.exists()) {
     return NextResponse.json({ error: 'Item não encontrado' }, { status: 404 });
   }
+
+  const itemAtual = docSnap.data();
 
   if (!podeModificar(itemAtual, session.user)) {
     return NextResponse.json({ error: 'Sem permissão para excluir' }, { status: 403 });
   }
 
-  db.prepare('DELETE FROM patrimonio WHERE id = ?').run(id);
-
+  await deleteDoc(docRef);
   return NextResponse.json({ success: true });
 }

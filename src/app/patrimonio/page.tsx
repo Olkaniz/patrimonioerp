@@ -1,14 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import type { Patrimonio } from "@/types/patrimonio";
 import { useRouter } from "next/navigation";
 
 export default function PatrimonioPage() {
-  const { data: session, status } = useSession();
+  const { data: session, status } = useSession(); // Obtém a sessão atual
+  const router = useRouter();
 
+  // Redireciona para o login caso o usuário não esteja autenticado
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/api/auth/signin"); // Página de login padrão do NextAuth
+    }
+  }, [status, router]);
+
+  // Estado para lista de patrimônios
   const [patrimonios, setPatrimonios] = useState<Patrimonio[]>([]);
+
+  // Estado do formulário
   const [formData, setFormData] = useState({
     codigo: "",
     nome: "",
@@ -23,16 +34,19 @@ export default function PatrimonioPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
 
+  // Nível e setor do usuário logado
   const nivel = session?.user?.nivel_permissao || 1;
   const setorUsuario = session?.user?.setor || "";
   const nomeUsuario = session?.user?.name || "";
 
+  // Carrega dados ao montar o componente
   useEffect(() => {
     fetch("/api/patrimonios")
       .then((res) => res.json())
       .then((data) => setPatrimonios(data));
   }, []);
 
+  // Define se o usuário pode editar/excluir o item
   const podeModificar = (item: Patrimonio) => {
     return (
       nivel === 4 ||
@@ -41,6 +55,7 @@ export default function PatrimonioPage() {
     );
   };
 
+  // Ações de edição
   const handleEdit = (item: Patrimonio) => {
     if (!podeModificar(item)) return alert("Você não tem permissão para editar este item.");
 
@@ -58,6 +73,7 @@ export default function PatrimonioPage() {
     setShowForm(true);
   };
 
+  // Ação de exclusão
   const handleDelete = async (id: number, item: Patrimonio) => {
     if (!podeModificar(item)) return alert("Você não tem permissão para excluir este item.");
     if (!confirm("Tem certeza que deseja excluir este item?")) return;
@@ -76,6 +92,7 @@ export default function PatrimonioPage() {
     setPatrimonios((prev) => prev.filter((item) => item.id !== id));
   };
 
+  // Ação de envio do formulário
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -116,9 +133,21 @@ export default function PatrimonioPage() {
     setShowForm(false);
   };
 
+  if (status === "loading") {
+    return <div className="text-white p-6">Carregando...</div>;
+  }
+
   return (
     <main className="min-h-screen bg-zinc-900 text-white p-6">
-      <h1 className="text-3xl font-bold mb-6">Patrimônios</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Patrimônios</h1>
+        <button
+          onClick={() => signOut()} // Botão de logout
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+        >
+          Sair
+        </button>
+      </div>
 
       {nivel > 1 && (
         <button
@@ -142,6 +171,7 @@ export default function PatrimonioPage() {
         </button>
       )}
 
+      {/* Formulário para criar ou editar patrimônio */}
       {showForm && nivel > 1 && (
         <form onSubmit={handleSubmit} className="bg-zinc-700 p-4 rounded mb-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -197,6 +227,7 @@ export default function PatrimonioPage() {
         </form>
       )}
 
+      {/* Tabela de patrimônios */}
       <div className="bg-zinc-800 p-4 rounded shadow">
         <p className="text-zinc-300 mb-4">
           Aqui você poderá visualizar e gerenciar os bens patrimoniais da empresa.
